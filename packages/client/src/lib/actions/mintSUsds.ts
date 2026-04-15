@@ -212,6 +212,9 @@ function buildMainnetPlan(
     );
   }
 
+  const referralCode =
+    request.referralCode === undefined ? undefined : Number(request.referralCode);
+
   return quoteMainnetUsdsBridgeAmount(client, chain, request.amount, litePsmAddress).map(
     (usdsOut): MultiStepExecution => {
       // Phase 1 — USDC → USDS via Spark UsdsPsmWrapper.sellGem.
@@ -244,10 +247,7 @@ function buildMainnetPlan(
       const depositData = encodeFunctionData({
         abi: erc4626Abi,
         functionName: 'deposit',
-        args:
-          request.referralCode === undefined
-            ? [usdsOut, receiver]
-            : [usdsOut, receiver, request.referralCode],
+        args: referralCode === undefined ? [usdsOut, receiver] : [usdsOut, receiver, referralCode],
       });
       const depositTx = makeTransactionRequest({
         chainId: chain.chainId,
