@@ -34,6 +34,7 @@ const SENDER = '0x1111111111111111111111111111111111111111' as const;
 // MultiStepExecution branch for sUSDS.
 const CHAIN_ID_L2 = 8453 as const;
 const CHAIN_ID_MAINNET = 1 as const;
+const REFERRAL_CODE = 42n;
 
 async function main() {
   const client = OseroClient.create({
@@ -73,6 +74,7 @@ async function main() {
     chainId: CHAIN_ID_L2,
     amount: hundredUsdc,
     sender: SENDER,
+    referralCode: REFERRAL_CODE,
   });
   if (mintSusdsL2Plan.isErr()) throw mintSusdsL2Plan.error;
   console.log(describePlan(mintSusdsL2Plan.value));
@@ -88,6 +90,7 @@ async function main() {
     chainId: CHAIN_ID_MAINNET,
     amount: hundredUsdc,
     sender: SENDER,
+    referralCode: REFERRAL_CODE,
   });
   if (mintSusdsMainnetPlan.isErr()) throw mintSusdsMainnetPlan.error;
   console.log(describePlan(mintSusdsMainnetPlan.value));

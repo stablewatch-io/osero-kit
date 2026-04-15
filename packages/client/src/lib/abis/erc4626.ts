@@ -23,6 +23,17 @@ export const erc4626Abi = [
   },
   {
     type: 'function',
+    name: 'deposit',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'assets', type: 'uint256' },
+      { name: 'receiver', type: 'address' },
+      { name: 'referral', type: 'uint16' },
+    ],
+    outputs: [{ name: 'shares', type: 'uint256' }],
+  },
+  {
+    type: 'function',
     name: 'mint',
     stateMutability: 'nonpayable',
     inputs: [

@@ -11,7 +11,7 @@ import { OseroClient, getChain } from '@osero/client';
  *     2. UsdsPsmWrapper.sellGem(sender, amount)       // sender gets USDS
  *   phase 2:
  *     3. USDS.approve(sUSDS, usdsOut)
- *     4. sUSDS.deposit(usdsOut, receiver)             // receiver gets sUSDS shares
+ *     4. sUSDS.deposit(usdsOut, receiver, referral)   // receiver gets sUSDS shares
  *
  * The viem adapter runs each step and waits for it to be mined
  * before starting the next one — `sendWith` handles the ordering.
@@ -33,6 +33,7 @@ import { banner, describeResult, formatToken } from '../shared/format.js';
 
 const CHAIN_ID = 1 as const;
 const AMOUNT_USDC = parseUnits('25', 6);
+const REFERRAL_CODE = 42n;
 
 async function main() {
   const account = privateKeyToAccount(loadPrivateKey());
@@ -46,6 +47,7 @@ async function main() {
   banner(`mintSUsds — ${chainMeta.name} (${CHAIN_ID}) — MultiStepExecution`);
   console.log(`  sender: ${account.address}`);
   console.log(`  spend:  ${AMOUNT_USDC} USDC (raw 6-dec)`);
+  console.log(`  referral: ${REFERRAL_CODE}`);
 
   const previewResult = await previewMintSUsds(client, {
     chainId: CHAIN_ID,
@@ -63,6 +65,7 @@ async function main() {
     chainId: CHAIN_ID,
     amount: AMOUNT_USDC,
     sender: account.address,
+    referralCode: REFERRAL_CODE,
   }).andThen(sendWith(wallet));
 
   if (result.isErr()) {

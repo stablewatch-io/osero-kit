@@ -156,7 +156,7 @@ type Request = {
   sender: `0x${string}`; // the wallet that pays the input
   receiver?: `0x${string}`; // default = sender
   slippageBps?: number; // default = client.config.defaultSlippageBps (5)
-  referralCode?: bigint; // L2 only — emitted in the PSM3 `Swap` event
+  referralCode?: bigint; // emitted on L2 PSM3 swaps and mainnet sUSDS deposits
 };
 ```
 

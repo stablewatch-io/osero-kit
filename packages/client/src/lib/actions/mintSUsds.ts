@@ -60,8 +60,10 @@ export type MintSUsdsRequest = {
   readonly slippageBps?: number;
 
   /**
-   * Opaque referral code emitted in the PSM3 `Swap` event for
-   * off-chain attribution. Ignored on Ethereum mainnet.
+   * Opaque referral code used for off-chain attribution.
+   *
+   * On L2s it is forwarded to the PSM3 `Swap` event. On Ethereum
+   * mainnet it is forwarded to the sUSDS `deposit` referral overload.
    *
    * @defaultValue 0n
    */
@@ -136,7 +138,8 @@ export function previewMintSUsds(
  * 1. `USDC.approve(UsdsPsmWrapper, amount)`
  * 2. `UsdsPsmWrapper.sellGem(sender, amount)` — sender receives USDS
  * 3. `USDS.approve(sUSDS, usdsOut)`
- * 4. `sUSDS.deposit(usdsOut, receiver)` — receiver gets sUSDS shares
+ * 4. `sUSDS.deposit(usdsOut, receiver, referralCode)` — receiver gets
+ *    sUSDS shares
  *
  * The exact USDS bridge amount is computed off-chain from
  * `LitePSM.tin()`, which is governance-set and has been `0` since
@@ -169,11 +172,23 @@ export function mintSUsds(
 
   const receiver = request.receiver ?? request.sender;
 
+  if (request.referralCode !== undefined && request.referralCode < 0n) {
+    return errAsync(
+      ValidationError.forField('referralCode', 'referralCode must be greater than or equal to 0'),
+    );
+  }
+
+  if (chain.isMainnet && request.referralCode !== undefined && request.referralCode > 65_535n) {
+    return errAsync(
+      ValidationError.forField('referralCode', 'referralCode is out of range for Ethereum mainnet'),
+    );
+  }
+
   if (chain.isMainnet) {
     return buildMainnetPlan(client, chain, request, receiver);
   }
 
-  return buildL2Plan(client, chain, request, receiver);
+  return buildL2Plan(client, chain, request, receiver, request.referralCode ?? 0n);
 }
 
 function buildMainnetPlan(
@@ -229,7 +244,10 @@ function buildMainnetPlan(
       const depositData = encodeFunctionData({
         abi: erc4626Abi,
         functionName: 'deposit',
-        args: [usdsOut, receiver],
+        args:
+          request.referralCode === undefined
+            ? [usdsOut, receiver]
+            : [usdsOut, receiver, request.referralCode],
       });
       const depositTx = makeTransactionRequest({
         chainId: chain.chainId,
@@ -257,12 +275,12 @@ function buildL2Plan(
   chain: ChainMetadata,
   request: MintSUsdsRequest,
   receiver: Address,
+  referralCode: bigint,
 ): ResultAsync<Erc20ApprovalRequired, UnexpectedError> {
   const usdc = getToken(chain.chainId, 'USDC');
   const susds = getToken(chain.chainId, 'sUSDS');
   const psmAddress = PSM_ADDRESSES[chain.chainId].psm;
   const slippageBps = request.slippageBps ?? client.config.defaultSlippageBps;
-  const referralCode = request.referralCode ?? 0n;
 
   return quoteL2MintSUsds(client, chain, request.amount).andThen((quote) => {
     const minAmountOut = applySlippage(quote, slippageBps);
