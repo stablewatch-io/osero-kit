@@ -126,12 +126,12 @@ Matching preview helpers return the quoted output amount as a raw
 `bigint` wrapped in `ResultAsync`. They only take `chainId` and
 `amount` because they do not build a sender-specific execution plan:
 
-| Preview helper         | Quotes        | Input decimals |
-| ---------------------- | ------------- | -------------: |
-| `previewMintUsds`      | USDC → USDS   |              6 |
-| `previewMintSUsds`     | USDC → sUSDS  |              6 |
-| `previewRedeemUsds`    | USDS → USDC   |             18 |
-| `previewRedeemSUsds`   | sUSDS → USDC  |             18 |
+| Preview helper       | Quotes       | Input decimals |
+| -------------------- | ------------ | -------------: |
+| `previewMintUsds`    | USDC → USDS  |              6 |
+| `previewMintSUsds`   | USDC → sUSDS |              6 |
+| `previewRedeemUsds`  | USDS → USDC  |             18 |
+| `previewRedeemSUsds` | sUSDS → USDC |             18 |
 
 ```ts
 import { previewMintSUsds } from '@osero/client/actions';

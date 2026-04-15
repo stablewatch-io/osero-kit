@@ -188,12 +188,12 @@ import {
 
 Matching preview helpers:
 
-| Helper                | Quotes         | Input decimals |
-| --------------------- | -------------- | -------------: |
-| `previewMintUsds`     | USDC -> USDS   |              6 |
-| `previewMintSUsds`    | USDC -> sUSDS  |              6 |
-| `previewRedeemUsds`   | USDS -> USDC   |             18 |
-| `previewRedeemSUsds`  | sUSDS -> USDC  |             18 |
+| Helper               | Quotes        | Input decimals |
+| -------------------- | ------------- | -------------: |
+| `previewMintUsds`    | USDC -> USDS  |              6 |
+| `previewMintSUsds`   | USDC -> sUSDS |              6 |
+| `previewRedeemUsds`  | USDS -> USDC  |             18 |
+| `previewRedeemSUsds` | sUSDS -> USDC |             18 |
 
 Every action accepts:
 
