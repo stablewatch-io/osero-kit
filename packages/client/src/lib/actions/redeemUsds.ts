@@ -67,7 +67,48 @@ export type RedeemUsdsRequest = {
   readonly referralCode?: bigint;
 };
 
+/**
+ * Parameters accepted by {@link previewRedeemUsds}.
+ */
+export type PreviewRedeemUsdsRequest = {
+  /**
+   * The chain on which the preview should happen. Must be one of the
+   * supported chains ({@link SUPPORTED_CHAIN_IDS}).
+   */
+  readonly chainId: number;
+
+  /**
+   * Amount of USDS to spend, in USDS's native 18 decimals.
+   *
+   * Must be strictly greater than zero.
+   */
+  readonly amount: bigint;
+};
+
 export type RedeemUsdsError = ValidationError | UnsupportedChainError | UnexpectedError;
+
+/**
+ * Preview how much USDC an exact-in {@link redeemUsds} flow would
+ * return for the given USDS amount.
+ */
+export function previewRedeemUsds(
+  client: OseroClient,
+  request: PreviewRedeemUsdsRequest,
+): ResultAsync<bigint, RedeemUsdsError> {
+  const chain = getChain(request.chainId);
+  if (!chain) {
+    return errAsync(new UnsupportedChainError(request.chainId));
+  }
+  if (request.amount <= 0n) {
+    return errAsync(ValidationError.forField('amount', 'amount must be greater than 0'));
+  }
+
+  if (chain.isMainnet) {
+    return quoteMainnetRedeemUsds(client, chain, request.amount);
+  }
+
+  return quoteL2RedeemUsds(client, chain, request.amount);
+}
 
 /**
  * Build an {@link ExecutionPlan} that redeems USDS back into USDC
@@ -134,48 +175,40 @@ function buildMainnetPlan(
     );
   }
 
-  const publicClient = client.getPublicClient(chain.chainId);
+  return quoteMainnetRedeemUsds(client, chain, request.amount, litePsmAddress).map(
+    (baseGemAmt): Erc20ApprovalRequired => {
+      // Exact-in from the caller's point of view: the caller is
+      // willing to spend up to `request.amount` USDS. We back out
+      // `gemAmt` (USDC out, 6-dec) from the wrapper's exact-out
+      // formula, then reduce it by `slippageBps` so that a small
+      // `tout` bump between plan and execution still leaves the
+      // approval large enough to cover the pulled USDS.
+      const gemAmt = applySlippage(baseGemAmt, slippageBps);
 
-  return ResultAsync.fromPromise(
-    publicClient.readContract({
-      address: litePsmAddress,
-      abi: litePsmAbi,
-      functionName: 'tout',
-    }),
-    (err) => UnexpectedError.from(err),
-  ).map((tout): Erc20ApprovalRequired => {
-    // Exact-in from the caller's point of view: the caller is
-    // willing to spend up to `request.amount` USDS. We back out
-    // `gemAmt` (USDC out, 6-dec) from the wrapper's exact-out
-    // formula, then reduce it by `slippageBps` so that a small
-    // `tout` bump between plan and execution still leaves the
-    // approval large enough to cover the pulled USDS.
-    const baseGemAmt = usdcFromUsdsViaBuyGem(request.amount, tout);
-    const gemAmt = applySlippage(baseGemAmt, slippageBps);
+      const buyGemData = encodeFunctionData({
+        abi: usdsPsmWrapperAbi,
+        functionName: 'buyGem',
+        args: [receiver, gemAmt],
+      });
 
-    const buyGemData = encodeFunctionData({
-      abi: usdsPsmWrapperAbi,
-      functionName: 'buyGem',
-      args: [receiver, gemAmt],
-    });
+      const mainTransaction = makeTransactionRequest({
+        chainId: chain.chainId,
+        from: request.sender,
+        to: wrapperAddress,
+        data: buyGemData,
+        operation: 'REDEEM_USDS_FOR_USDC',
+      });
 
-    const mainTransaction = makeTransactionRequest({
-      chainId: chain.chainId,
-      from: request.sender,
-      to: wrapperAddress,
-      data: buyGemData,
-      operation: 'REDEEM_USDS_FOR_USDC',
-    });
-
-    return makeSingleApprovalPlan({
-      chainId: chain.chainId,
-      from: request.sender,
-      token: usds.address,
-      spender: wrapperAddress,
-      amount: request.amount,
-      mainTransaction,
-    });
-  });
+      return makeSingleApprovalPlan({
+        chainId: chain.chainId,
+        from: request.sender,
+        token: usds.address,
+        spender: wrapperAddress,
+        amount: request.amount,
+        mainTransaction,
+      });
+    },
+  );
 }
 
 function buildL2Plan(
@@ -190,17 +223,7 @@ function buildL2Plan(
   const slippageBps = request.slippageBps ?? client.config.defaultSlippageBps;
   const referralCode = request.referralCode ?? 0n;
 
-  const publicClient = client.getPublicClient(chain.chainId);
-
-  return ResultAsync.fromPromise(
-    publicClient.readContract({
-      address: psmAddress,
-      abi: psm3Abi,
-      functionName: 'previewSwapExactIn',
-      args: [usds.address, usdc.address, request.amount],
-    }),
-    (err) => UnexpectedError.from(err),
-  ).map((quote): Erc20ApprovalRequired => {
+  return quoteL2RedeemUsds(client, chain, request.amount).map((quote): Erc20ApprovalRequired => {
     const minAmountOut = applySlippage(quote, slippageBps);
 
     const swapData = encodeFunctionData({
@@ -226,4 +249,51 @@ function buildL2Plan(
       mainTransaction,
     });
   });
+}
+
+function quoteMainnetRedeemUsds(
+  client: OseroClient,
+  chain: ChainMetadata,
+  amount: bigint,
+  litePsmAddress = PSM_ADDRESSES[chain.chainId].litePsm,
+): ResultAsync<bigint, UnexpectedError> {
+  if (!litePsmAddress) {
+    return errAsync(
+      UnexpectedError.from(
+        new Error('Mainnet PSM_ADDRESSES entry is missing `litePsm`. This is a bug in the SDK.'),
+      ),
+    );
+  }
+
+  const publicClient = client.getPublicClient(chain.chainId);
+
+  return ResultAsync.fromPromise(
+    publicClient.readContract({
+      address: litePsmAddress,
+      abi: litePsmAbi,
+      functionName: 'tout',
+    }),
+    (err) => UnexpectedError.from(err),
+  ).map((tout) => usdcFromUsdsViaBuyGem(amount, tout));
+}
+
+function quoteL2RedeemUsds(
+  client: OseroClient,
+  chain: ChainMetadata,
+  amount: bigint,
+): ResultAsync<bigint, UnexpectedError> {
+  const usdc = getToken(chain.chainId, 'USDC');
+  const usds = getToken(chain.chainId, 'USDS');
+  const psmAddress = PSM_ADDRESSES[chain.chainId].psm;
+  const publicClient = client.getPublicClient(chain.chainId);
+
+  return ResultAsync.fromPromise(
+    publicClient.readContract({
+      address: psmAddress,
+      abi: psm3Abi,
+      functionName: 'previewSwapExactIn',
+      args: [usds.address, usdc.address, amount],
+    }),
+    (err) => UnexpectedError.from(err),
+  );
 }

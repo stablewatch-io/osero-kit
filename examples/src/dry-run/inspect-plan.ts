@@ -9,11 +9,20 @@ import { OseroClient } from '@osero/client';
  *
  *   pnpm --filter @osero/examples dry-run:inspect-plan
  */
-import { mintSUsds, mintUsds, redeemSUsds, redeemUsds } from '@osero/client/actions';
+import {
+  mintSUsds,
+  mintUsds,
+  previewMintSUsds,
+  previewMintUsds,
+  previewRedeemSUsds,
+  previewRedeemUsds,
+  redeemSUsds,
+  redeemUsds,
+} from '@osero/client/actions';
 import { http, parseUnits } from 'viem';
 
 import { optionalRpcUrl } from '../shared/env.js';
-import { banner, describePlan } from '../shared/format.js';
+import { banner, describePlan, formatToken } from '../shared/format.js';
 
 // A placeholder sender. The plan is built against this address so the
 // calldata's `from` + PSM3 `receiver` arguments are deterministic.
@@ -39,6 +48,12 @@ async function main() {
   const tenSusds = parseUnits('10', 18);
 
   banner(`mintUsds — USDC → USDS on Base (${CHAIN_ID_L2})`);
+  const mintUsdsQuote = await previewMintUsds(client, {
+    chainId: CHAIN_ID_L2,
+    amount: hundredUsdc,
+  });
+  if (mintUsdsQuote.isErr()) throw mintUsdsQuote.error;
+  console.log(`quote: ${formatToken(mintUsdsQuote.value, 18, 'USDS')}`);
   const mintUsdsPlan = await mintUsds(client, {
     chainId: CHAIN_ID_L2,
     amount: hundredUsdc,
@@ -48,6 +63,12 @@ async function main() {
   console.log(describePlan(mintUsdsPlan.value));
 
   banner(`mintSUsds — USDC → sUSDS on Base (L2, single phase)`);
+  const mintSusdsL2Quote = await previewMintSUsds(client, {
+    chainId: CHAIN_ID_L2,
+    amount: hundredUsdc,
+  });
+  if (mintSusdsL2Quote.isErr()) throw mintSusdsL2Quote.error;
+  console.log(`quote: ${formatToken(mintSusdsL2Quote.value, 18, 'sUSDS')}`);
   const mintSusdsL2Plan = await mintSUsds(client, {
     chainId: CHAIN_ID_L2,
     amount: hundredUsdc,
@@ -57,6 +78,12 @@ async function main() {
   console.log(describePlan(mintSusdsL2Plan.value));
 
   banner(`mintSUsds — USDC → sUSDS on mainnet (MultiStepExecution)`);
+  const mintSusdsMainnetQuote = await previewMintSUsds(client, {
+    chainId: CHAIN_ID_MAINNET,
+    amount: hundredUsdc,
+  });
+  if (mintSusdsMainnetQuote.isErr()) throw mintSusdsMainnetQuote.error;
+  console.log(`quote: ${formatToken(mintSusdsMainnetQuote.value, 18, 'sUSDS')}`);
   const mintSusdsMainnetPlan = await mintSUsds(client, {
     chainId: CHAIN_ID_MAINNET,
     amount: hundredUsdc,
@@ -66,6 +93,12 @@ async function main() {
   console.log(describePlan(mintSusdsMainnetPlan.value));
 
   banner(`redeemUsds — USDS → USDC on Base`);
+  const redeemUsdsQuote = await previewRedeemUsds(client, {
+    chainId: CHAIN_ID_L2,
+    amount: hundredUsds,
+  });
+  if (redeemUsdsQuote.isErr()) throw redeemUsdsQuote.error;
+  console.log(`quote: ${formatToken(redeemUsdsQuote.value, 6, 'USDC')}`);
   const redeemUsdsPlan = await redeemUsds(client, {
     chainId: CHAIN_ID_L2,
     amount: hundredUsds,
@@ -75,6 +108,12 @@ async function main() {
   console.log(describePlan(redeemUsdsPlan.value));
 
   banner(`redeemSUsds — sUSDS → USDC on Base`);
+  const redeemSusdsQuote = await previewRedeemSUsds(client, {
+    chainId: CHAIN_ID_L2,
+    amount: tenSusds,
+  });
+  if (redeemSusdsQuote.isErr()) throw redeemSusdsQuote.error;
+  console.log(`quote: ${formatToken(redeemSusdsQuote.value, 6, 'USDC')}`);
   const redeemSusdsPlan = await redeemSUsds(client, {
     chainId: CHAIN_ID_L2,
     amount: tenSusds,

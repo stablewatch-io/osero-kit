@@ -6,10 +6,11 @@ import { usdsPsmWrapperAbi } from '../abis/usdsPsmWrapper.js';
 import { flattenExecutionPlan } from '../adapters.js';
 import { PSM_ADDRESSES } from '../addresses.js';
 import { UnexpectedError, UnsupportedChainError, ValidationError } from '../errors.js';
+import { usdsFromUsdcViaSellGem } from '../math.js';
 import { OseroClient } from '../OseroClient.js';
 import { getToken } from '../tokens.js';
 import { installMockPublicClient } from './_testing.js';
-import { mintUsds } from './mintUsds.js';
+import { mintUsds, previewMintUsds } from './mintUsds.js';
 
 const SENDER = '0x1111111111111111111111111111111111111111' as const;
 const RECEIVER = '0x2222222222222222222222222222222222222222' as const;
@@ -39,6 +40,45 @@ describe('mintUsds', () => {
     if (result.isErr()) {
       expect(result.error).toBeInstanceOf(ValidationError);
     }
+  });
+
+  describe('previewMintUsds', () => {
+    it('previews the mainnet USDS output using lite PSM tin', async () => {
+      const client = OseroClient.create();
+      const amount = parseUnits('100', 6);
+      const tin = 10n ** 16n;
+      installMockPublicClient(client, 1, ({ functionName }) => {
+        if (functionName === 'tin') return tin;
+        throw new Error(`unexpected read ${functionName}`);
+      });
+
+      const result = await previewMintUsds(client, {
+        chainId: 1,
+        amount,
+      });
+
+      expect(result.isOk()).toBe(true);
+      if (!result.isOk()) return;
+      expect(result.value).toBe(usdsFromUsdcViaSellGem(amount, tin));
+    });
+
+    it('previews the L2 USDS output via PSM3.previewSwapExactIn', async () => {
+      const client = OseroClient.create();
+      const quote = 123_456_789_012_345_678_901n;
+      installMockPublicClient(client, 8453, ({ functionName }) => {
+        if (functionName === 'previewSwapExactIn') return quote;
+        throw new Error(`unexpected read ${functionName}`);
+      });
+
+      const result = await previewMintUsds(client, {
+        chainId: 8453,
+        amount: parseUnits('100', 6),
+      });
+
+      expect(result.isOk()).toBe(true);
+      if (!result.isOk()) return;
+      expect(result.value).toBe(quote);
+    });
   });
 
   describe('mainnet (chain 1)', () => {

@@ -25,6 +25,9 @@ The SDK figures out which contract to talk to, reads the live fee
 transactions, and hands you back a wallet-agnostic `ExecutionPlan`
 that either adapter can broadcast.
 
+It also exposes preview helpers for every exact-in flow so callers can
+quote the expected output amount before building or sending a plan.
+
 ## Install
 
 ```bash
@@ -118,6 +121,31 @@ into `sendWith` (from either `@osero/client/viem` or
 | `mintSUsds`   | USDC → sUSDS | four-tx two-phase  | approve + PSM3 swap |
 | `redeemUsds`  | USDS → USDC  | approve + buyGem   | approve + PSM3 swap |
 | `redeemSUsds` | sUSDS → USDC | three-tx two-phase | approve + PSM3 swap |
+
+Matching preview helpers return the quoted output amount as a raw
+`bigint` wrapped in `ResultAsync`. They only take `chainId` and
+`amount` because they do not build a sender-specific execution plan:
+
+| Preview helper         | Quotes        | Input decimals |
+| ---------------------- | ------------- | -------------: |
+| `previewMintUsds`      | USDC → USDS   |              6 |
+| `previewMintSUsds`     | USDC → sUSDS  |              6 |
+| `previewRedeemUsds`    | USDS → USDC   |             18 |
+| `previewRedeemSUsds`   | sUSDS → USDC  |             18 |
+
+```ts
+import { previewMintSUsds } from '@osero/client/actions';
+import { parseUnits } from 'viem';
+
+const quote = await previewMintSUsds(client, {
+  chainId: 8453,
+  amount: parseUnits('100', 6),
+});
+
+if (quote.isOk()) {
+  console.log('expected sUSDS out:', quote.value);
+}
+```
 
 ### Request shape
 

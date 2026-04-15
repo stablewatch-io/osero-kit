@@ -1,8 +1,8 @@
 # @osero/examples
 
 Runnable examples for `@osero/client`. Each file is a self-contained
-script that builds an `ExecutionPlan` and either inspects it or
-broadcasts it through a wallet adapter.
+script that previews a flow, builds an `ExecutionPlan`, and either
+inspects it or broadcasts it through a wallet adapter.
 
 ## Layout
 
@@ -55,9 +55,12 @@ pnpm --filter @osero/examples ethers:roundtrip
 The SDK splits "what to do" from "how to sign":
 
 1. **Action functions** (`mintUsds`, `mintSUsds`, `redeemUsds`,
-   `redeemSUsds`) live under `@osero/client/actions`. They take an
-   `OseroClient` + a request object and return a
-   `ResultAsync<ExecutionPlan, ActionError>`.
+   `redeemSUsds`) live under `@osero/client/actions`. Matching
+   preview helpers (`previewMintUsds`, `previewMintSUsds`,
+   `previewRedeemUsds`, `previewRedeemSUsds`) return the quoted output
+   amount for the same exact-in amount on a chain. The action
+   functions themselves take an `OseroClient` + a request object and
+   return a `ResultAsync<ExecutionPlan, ActionError>`.
 2. **`ExecutionPlan`** is a wallet-agnostic description of the work.
    It is a discriminated union of:
    - `TransactionRequest` — a single ready-to-send tx
@@ -69,6 +72,7 @@ The SDK splits "what to do" from "how to sign":
    tx in order, and returns a `TransactionResult` or a typed error.
 
 The roundtrip examples also show the read side of the SDK: they use
+preview helpers to print expected output amounts up front, then use
 `getTokenBalances` and `getSUsdsBalance` from `@osero/client` to track
 the balance delta across the mint and redeem legs without hand-writing
 ERC-20 `balanceOf` calls.

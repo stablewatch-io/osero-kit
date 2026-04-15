@@ -15,14 +15,14 @@ import { OseroClient, getChain, isErc20ApprovalRequired } from '@osero/client';
  *
  *   pnpm --filter @osero/examples viem:redeem-susds
  */
-import { redeemSUsds } from '@osero/client/actions';
+import { previewRedeemSUsds, redeemSUsds } from '@osero/client/actions';
 import { sendWith } from '@osero/client/viem';
 import { createWalletClient, http, parseUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base } from 'viem/chains';
 
 import { loadPrivateKey, optionalRpcUrl } from '../shared/env.js';
-import { banner, describePlan, describeResult } from '../shared/format.js';
+import { banner, describePlan, describeResult, formatToken } from '../shared/format.js';
 
 const CHAIN_ID = 8453 as const;
 const AMOUNT_SUSDS = parseUnits('5', 18); // 5 sUSDS shares
@@ -39,6 +39,17 @@ async function main() {
   banner(`redeemSUsds — ${chainMeta.name}`);
   console.log(`  sender: ${account.address}`);
   console.log(`  burn:   ${AMOUNT_SUSDS} sUSDS (raw 18-dec)`);
+
+  const previewResult = await previewRedeemSUsds(client, {
+    chainId: CHAIN_ID,
+    amount: AMOUNT_SUSDS,
+  });
+  if (previewResult.isErr()) {
+    console.error('previewRedeemSUsds failed:', previewResult.error);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`  quote:  ${formatToken(previewResult.value, 6, 'USDC')}`);
 
   // Eager form: build the plan explicitly, then inspect it before
   // sending. This is the pattern to reach for when you want the

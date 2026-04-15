@@ -13,7 +13,12 @@ import { OseroClient, getChain, getSUsdsBalance, getTokenBalances } from '@osero
  *
  *   pnpm --filter @osero/examples viem:roundtrip
  */
-import { mintSUsds, redeemSUsds } from '@osero/client/actions';
+import {
+  mintSUsds,
+  previewMintSUsds,
+  previewRedeemSUsds,
+  redeemSUsds,
+} from '@osero/client/actions';
 import { sendWith } from '@osero/client/viem';
 import { createWalletClient, http, parseUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -57,6 +62,13 @@ async function main() {
   // Leg 1 — USDC → sUSDS
   // -------------------------------------------------------------
   banner('Leg 1 — mintSUsds');
+  const mintPreview = await previewMintSUsds(client, {
+    chainId: CHAIN_ID,
+    amount: MINT_AMOUNT_USDC,
+  });
+  if (mintPreview.isErr()) throw mintPreview.error;
+  console.log(`  quote:    ${formatToken(mintPreview.value, 18, 'sUSDS')}`);
+
   const mintResult = await mintSUsds(client, {
     chainId: CHAIN_ID,
     amount: MINT_AMOUNT_USDC,
@@ -85,6 +97,13 @@ async function main() {
   // Leg 2 — sUSDS → USDC
   // -------------------------------------------------------------
   banner('Leg 2 — redeemSUsds');
+  const redeemPreview = await previewRedeemSUsds(client, {
+    chainId: CHAIN_ID,
+    amount: sharesReceived,
+  });
+  if (redeemPreview.isErr()) throw redeemPreview.error;
+  console.log(`  quote:    ${formatToken(redeemPreview.value, 6, 'USDC')}`);
+
   const redeemResult = await redeemSUsds(client, {
     chainId: CHAIN_ID,
     amount: sharesReceived,

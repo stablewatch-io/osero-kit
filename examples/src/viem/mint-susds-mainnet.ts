@@ -22,14 +22,14 @@ import { OseroClient, getChain } from '@osero/client';
  *
  * WARNING: this targets Ethereum L1 and costs real gas.
  */
-import { mintSUsds } from '@osero/client/actions';
+import { mintSUsds, previewMintSUsds } from '@osero/client/actions';
 import { sendWith } from '@osero/client/viem';
 import { createWalletClient, http, parseUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
 
 import { loadPrivateKey, optionalRpcUrl } from '../shared/env.js';
-import { banner, describeResult } from '../shared/format.js';
+import { banner, describeResult, formatToken } from '../shared/format.js';
 
 const CHAIN_ID = 1 as const;
 const AMOUNT_USDC = parseUnits('25', 6);
@@ -46,6 +46,17 @@ async function main() {
   banner(`mintSUsds — ${chainMeta.name} (${CHAIN_ID}) — MultiStepExecution`);
   console.log(`  sender: ${account.address}`);
   console.log(`  spend:  ${AMOUNT_USDC} USDC (raw 6-dec)`);
+
+  const previewResult = await previewMintSUsds(client, {
+    chainId: CHAIN_ID,
+    amount: AMOUNT_USDC,
+  });
+  if (previewResult.isErr()) {
+    console.error('previewMintSUsds failed:', previewResult.error);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`  quote:  ${formatToken(previewResult.value, 18, 'sUSDS')}`);
   console.log('  note:   this is a 4-tx plan and will take ~4 blocks to settle');
 
   const result = await mintSUsds(client, {

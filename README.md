@@ -9,6 +9,7 @@ before anything is signed.
 
 - Mint USDS from USDC and redeem USDS back to USDC.
 - Mint sUSDS from USDC and redeem sUSDS back to USDC.
+- Preview exact-in output amounts before building or sending a plan.
 - Supports Ethereum mainnet, OP Mainnet, Unichain, Base, and Arbitrum One.
 - Uses viem internally for ABI encoding and public RPC reads.
 - Provides adapters for `@osero/client/viem` and `@osero/client/ethers`.
@@ -140,12 +141,42 @@ pnpm install
 pnpm --filter @osero/examples dry-run:inspect-plan
 ```
 
+## Preview a Flow Before Sending
+
+Preview helpers mirror the exact-in action names and return the quoted
+output amount as a `ResultAsync<bigint, ...>`. They only need
+`chainId` and `amount` because they do not build a sender-specific
+plan:
+
+```ts
+import { previewMintSUsds } from '@osero/client/actions';
+import { parseUnits } from 'viem';
+
+const quote = await previewMintSUsds(client, {
+  chainId: 8453,
+  amount: parseUnits('100', 6),
+});
+
+if (quote.isOk()) {
+  console.log('expected sUSDS out:', quote.value);
+}
+```
+
 ## Available Actions
 
 Import actions from `@osero/client/actions`:
 
 ```ts
-import { mintSUsds, mintUsds, redeemSUsds, redeemUsds } from '@osero/client/actions';
+import {
+  mintSUsds,
+  mintUsds,
+  previewMintSUsds,
+  previewMintUsds,
+  previewRedeemSUsds,
+  previewRedeemUsds,
+  redeemSUsds,
+  redeemUsds,
+} from '@osero/client/actions';
 ```
 
 | Action        | Direction     | Input decimals |
@@ -154,6 +185,15 @@ import { mintSUsds, mintUsds, redeemSUsds, redeemUsds } from '@osero/client/acti
 | `mintSUsds`   | USDC -> sUSDS |              6 |
 | `redeemUsds`  | USDS -> USDC  |             18 |
 | `redeemSUsds` | sUSDS -> USDC |             18 |
+
+Matching preview helpers:
+
+| Helper                | Quotes         | Input decimals |
+| --------------------- | -------------- | -------------: |
+| `previewMintUsds`     | USDC -> USDS   |              6 |
+| `previewMintSUsds`    | USDC -> sUSDS  |              6 |
+| `previewRedeemUsds`   | USDS -> USDC   |             18 |
+| `previewRedeemSUsds`  | sUSDS -> USDC  |             18 |
 
 Every action accepts:
 
@@ -259,9 +299,9 @@ console.log(getToken(8453, 'USDC').address);
 
 Runnable examples live in `examples/src`.
 
-The Base roundtrip examples now use `getTokenBalances` and
-`getSUsdsBalance` to snapshot balances before and after the mint/redeem
-flow instead of constructing ERC-20 reads manually.
+The dry-run script and broadcast examples now show the preview helpers
+alongside plan building so you can compare the expected output quote
+with the eventual balance delta.
 
 ## Releases
 

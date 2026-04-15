@@ -9,7 +9,7 @@ import { usdsFromUsdcViaSellGem } from '../math.js';
 import { OseroClient } from '../OseroClient.js';
 import { getToken } from '../tokens.js';
 import { installMockPublicClient } from './_testing.js';
-import { mintSUsds } from './mintSUsds.js';
+import { mintSUsds, previewMintSUsds } from './mintSUsds.js';
 
 const SENDER = '0x1111111111111111111111111111111111111111' as const;
 const RECEIVER = '0x2222222222222222222222222222222222222222' as const;
@@ -39,6 +39,52 @@ describe('mintSUsds', () => {
     if (result.isErr()) {
       expect(result.error).toBeInstanceOf(ValidationError);
     }
+  });
+
+  describe('previewMintSUsds', () => {
+    it('previews the mainnet sUSDS output via sellGem math and previewDeposit', async () => {
+      const client = OseroClient.create();
+      const amount = parseUnits('1000', 6);
+      const tin = 10n ** 16n;
+      const expectedUsdsOut = usdsFromUsdcViaSellGem(amount, tin);
+      const sharesOut = parseUnits('990', 18);
+      const mock = installMockPublicClient(client, 1, ({ functionName, args }) => {
+        if (functionName === 'tin') return tin;
+        if (functionName === 'previewDeposit') {
+          expect(args).toEqual([expectedUsdsOut]);
+          return sharesOut;
+        }
+        throw new Error(`unexpected read ${functionName}`);
+      });
+
+      const result = await previewMintSUsds(client, {
+        chainId: 1,
+        amount,
+      });
+
+      expect(mock.readContract).toHaveBeenCalledTimes(2);
+      expect(result.isOk()).toBe(true);
+      if (!result.isOk()) return;
+      expect(result.value).toBe(sharesOut);
+    });
+
+    it('previews the L2 sUSDS output via PSM3.previewSwapExactIn', async () => {
+      const client = OseroClient.create();
+      const quote = parseUnits('999.5', 18);
+      installMockPublicClient(client, 8453, ({ functionName }) => {
+        if (functionName === 'previewSwapExactIn') return quote;
+        throw new Error(`unexpected read ${functionName}`);
+      });
+
+      const result = await previewMintSUsds(client, {
+        chainId: 8453,
+        amount: parseUnits('1000', 6),
+      });
+
+      expect(result.isOk()).toBe(true);
+      if (!result.isOk()) return;
+      expect(result.value).toBe(quote);
+    });
   });
 
   describe('mainnet (chain 1)', () => {

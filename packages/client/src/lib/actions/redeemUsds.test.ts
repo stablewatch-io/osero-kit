@@ -8,7 +8,7 @@ import { usdcFromUsdsViaBuyGem } from '../math.js';
 import { OseroClient } from '../OseroClient.js';
 import { getToken } from '../tokens.js';
 import { installMockPublicClient } from './_testing.js';
-import { redeemUsds } from './redeemUsds.js';
+import { previewRedeemUsds, redeemUsds } from './redeemUsds.js';
 
 const SENDER = '0x1111111111111111111111111111111111111111' as const;
 
@@ -37,6 +37,45 @@ describe('redeemUsds', () => {
     if (result.isErr()) {
       expect(result.error).toBeInstanceOf(ValidationError);
     }
+  });
+
+  describe('previewRedeemUsds', () => {
+    it('previews the mainnet USDC output using lite PSM tout', async () => {
+      const client = OseroClient.create();
+      const amount = parseUnits('1000', 18);
+      const tout = 10n ** 16n;
+      installMockPublicClient(client, 1, ({ functionName }) => {
+        if (functionName === 'tout') return tout;
+        throw new Error(`unexpected read ${functionName}`);
+      });
+
+      const result = await previewRedeemUsds(client, {
+        chainId: 1,
+        amount,
+      });
+
+      expect(result.isOk()).toBe(true);
+      if (!result.isOk()) return;
+      expect(result.value).toBe(usdcFromUsdsViaBuyGem(amount, tout));
+    });
+
+    it('previews the L2 USDC output via PSM3.previewSwapExactIn', async () => {
+      const client = OseroClient.create();
+      const quote = 999_500_000n;
+      installMockPublicClient(client, 42161, ({ functionName }) => {
+        if (functionName === 'previewSwapExactIn') return quote;
+        throw new Error(`unexpected read ${functionName}`);
+      });
+
+      const result = await previewRedeemUsds(client, {
+        chainId: 42161,
+        amount: parseUnits('1000', 18),
+      });
+
+      expect(result.isOk()).toBe(true);
+      if (!result.isOk()) return;
+      expect(result.value).toBe(quote);
+    });
   });
 
   describe('mainnet (chain 1)', () => {

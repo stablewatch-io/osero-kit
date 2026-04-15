@@ -13,14 +13,14 @@ import { OseroClient, getChain } from '@osero/client';
  *
  *   pnpm --filter @osero/examples viem:mint-usds
  */
-import { mintUsds } from '@osero/client/actions';
+import { mintUsds, previewMintUsds } from '@osero/client/actions';
 import { sendWith } from '@osero/client/viem';
 import { createWalletClient, http, parseUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base } from 'viem/chains';
 
 import { loadPrivateKey, optionalRpcUrl } from '../shared/env.js';
-import { banner, describeResult } from '../shared/format.js';
+import { banner, describeResult, formatToken } from '../shared/format.js';
 
 const CHAIN_ID = 8453 as const;
 const AMOUNT_USDC = parseUnits('10', 6); // 10 USDC
@@ -50,6 +50,17 @@ async function main() {
   banner(`mintUsds — ${chainMeta.name} (${CHAIN_ID})`);
   console.log(`  sender: ${account.address}`);
   console.log(`  spend:  ${AMOUNT_USDC} USDC (raw 6-dec)`);
+
+  const previewResult = await previewMintUsds(client, {
+    chainId: CHAIN_ID,
+    amount: AMOUNT_USDC,
+  });
+  if (previewResult.isErr()) {
+    console.error('previewMintUsds failed:', previewResult.error);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`  quote:  ${formatToken(previewResult.value, 18, 'USDS')}`);
 
   // Curried form — `sendWith(wallet)` is a plan → ResultAsync handler
   // that fits right into `.andThen`. This is the canonical way to

@@ -9,7 +9,7 @@ import { usdcFromUsdsViaBuyGem } from '../math.js';
 import { OseroClient } from '../OseroClient.js';
 import { getToken } from '../tokens.js';
 import { installMockPublicClient } from './_testing.js';
-import { redeemSUsds } from './redeemSUsds.js';
+import { previewRedeemSUsds, redeemSUsds } from './redeemSUsds.js';
 
 const SENDER = '0x1111111111111111111111111111111111111111' as const;
 
@@ -38,6 +38,47 @@ describe('redeemSUsds', () => {
     if (result.isErr()) {
       expect(result.error).toBeInstanceOf(ValidationError);
     }
+  });
+
+  describe('previewRedeemSUsds', () => {
+    it('previews the mainnet USDC output via previewRedeem and lite PSM tout', async () => {
+      const client = OseroClient.create();
+      const shares = parseUnits('1000', 18);
+      const usdsOut = parseUnits('1005', 18);
+      const tout = 10n ** 16n;
+      installMockPublicClient(client, 1, ({ functionName }) => {
+        if (functionName === 'previewRedeem') return usdsOut;
+        if (functionName === 'tout') return tout;
+        throw new Error(`unexpected read ${functionName}`);
+      });
+
+      const result = await previewRedeemSUsds(client, {
+        chainId: 1,
+        amount: shares,
+      });
+
+      expect(result.isOk()).toBe(true);
+      if (!result.isOk()) return;
+      expect(result.value).toBe(usdcFromUsdsViaBuyGem(usdsOut, tout));
+    });
+
+    it('previews the L2 USDC output via PSM3.previewSwapExactIn', async () => {
+      const client = OseroClient.create();
+      const quote = 999_500_000n;
+      installMockPublicClient(client, 8453, ({ functionName }) => {
+        if (functionName === 'previewSwapExactIn') return quote;
+        throw new Error(`unexpected read ${functionName}`);
+      });
+
+      const result = await previewRedeemSUsds(client, {
+        chainId: 8453,
+        amount: parseUnits('1000', 18),
+      });
+
+      expect(result.isOk()).toBe(true);
+      if (!result.isOk()) return;
+      expect(result.value).toBe(quote);
+    });
   });
 
   describe('mainnet (chain 1)', () => {

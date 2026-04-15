@@ -1,11 +1,12 @@
 import { type Address, encodeFunctionData } from 'viem';
 
+import { litePsmAbi } from '../abis/litePsm.js';
 import { psm3Abi } from '../abis/psm3.js';
 import { usdsPsmWrapperAbi } from '../abis/usdsPsmWrapper.js';
 import { PSM_ADDRESSES } from '../addresses.js';
 import { type ChainMetadata, getChain } from '../chains.js';
 import { UnexpectedError, UnsupportedChainError, ValidationError } from '../errors.js';
-import { applySlippage } from '../math.js';
+import { applySlippage, usdsFromUsdcViaSellGem } from '../math.js';
 import type { OseroClient } from '../OseroClient.js';
 import { makeSingleApprovalPlan, makeTransactionRequest } from '../plan.js';
 import { errAsync, okAsync, ResultAsync } from '../result.js';
@@ -61,7 +62,48 @@ export type MintUsdsRequest = {
   readonly referralCode?: bigint;
 };
 
+/**
+ * Parameters accepted by {@link previewMintUsds}.
+ */
+export type PreviewMintUsdsRequest = {
+  /**
+   * The chain on which the preview should happen. Must be one of the
+   * supported chains ({@link SUPPORTED_CHAIN_IDS}).
+   */
+  readonly chainId: number;
+
+  /**
+   * Amount of USDC to spend, in USDC's native 6 decimals.
+   *
+   * Must be strictly greater than zero.
+   */
+  readonly amount: bigint;
+};
+
 export type MintUsdsError = ValidationError | UnsupportedChainError | UnexpectedError;
+
+/**
+ * Preview how much USDS an exact-in {@link mintUsds} flow would return
+ * for the given USDC amount.
+ */
+export function previewMintUsds(
+  client: OseroClient,
+  request: PreviewMintUsdsRequest,
+): ResultAsync<bigint, MintUsdsError> {
+  const chain = getChain(request.chainId);
+  if (!chain) {
+    return errAsync(new UnsupportedChainError(request.chainId));
+  }
+  if (request.amount <= 0n) {
+    return errAsync(ValidationError.forField('amount', 'amount must be greater than 0'));
+  }
+
+  if (chain.isMainnet) {
+    return quoteMainnetMintUsds(client, chain, request.amount);
+  }
+
+  return quoteL2MintUsds(client, chain, request.amount);
+}
 
 /**
  * Build an {@link ExecutionPlan} that mints USDS from USDC on the
@@ -166,17 +208,7 @@ function buildL2Plan(
   const slippageBps = request.slippageBps ?? client.config.defaultSlippageBps;
   const referralCode = request.referralCode ?? 0n;
 
-  const publicClient = client.getPublicClient(chain.chainId);
-
-  return ResultAsync.fromPromise(
-    publicClient.readContract({
-      address: psmAddress,
-      abi: psm3Abi,
-      functionName: 'previewSwapExactIn',
-      args: [usdc.address, usds.address, request.amount],
-    }),
-    (err) => UnexpectedError.from(err),
-  ).map((quote): Erc20ApprovalRequired => {
+  return quoteL2MintUsds(client, chain, request.amount).map((quote): Erc20ApprovalRequired => {
     const minAmountOut = applySlippage(quote, slippageBps);
 
     const swapData = encodeFunctionData({
@@ -202,4 +234,52 @@ function buildL2Plan(
       mainTransaction,
     });
   });
+}
+
+function quoteMainnetMintUsds(
+  client: OseroClient,
+  chain: ChainMetadata,
+  amount: bigint,
+): ResultAsync<bigint, UnexpectedError> {
+  const litePsmAddress = PSM_ADDRESSES[chain.chainId].litePsm;
+
+  if (!litePsmAddress) {
+    return errAsync(
+      UnexpectedError.from(
+        new Error('Mainnet PSM_ADDRESSES entry is missing `litePsm`. This is a bug in the SDK.'),
+      ),
+    );
+  }
+
+  const publicClient = client.getPublicClient(chain.chainId);
+
+  return ResultAsync.fromPromise(
+    publicClient.readContract({
+      address: litePsmAddress,
+      abi: litePsmAbi,
+      functionName: 'tin',
+    }),
+    (err) => UnexpectedError.from(err),
+  ).map((tin) => usdsFromUsdcViaSellGem(amount, tin));
+}
+
+function quoteL2MintUsds(
+  client: OseroClient,
+  chain: ChainMetadata,
+  amount: bigint,
+): ResultAsync<bigint, UnexpectedError> {
+  const usdc = getToken(chain.chainId, 'USDC');
+  const usds = getToken(chain.chainId, 'USDS');
+  const psmAddress = PSM_ADDRESSES[chain.chainId].psm;
+  const publicClient = client.getPublicClient(chain.chainId);
+
+  return ResultAsync.fromPromise(
+    publicClient.readContract({
+      address: psmAddress,
+      abi: psm3Abi,
+      functionName: 'previewSwapExactIn',
+      args: [usdc.address, usds.address, amount],
+    }),
+    (err) => UnexpectedError.from(err),
+  );
 }

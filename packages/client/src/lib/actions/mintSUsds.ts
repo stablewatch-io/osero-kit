@@ -68,7 +68,48 @@ export type MintSUsdsRequest = {
   readonly referralCode?: bigint;
 };
 
+/**
+ * Parameters accepted by {@link previewMintSUsds}.
+ */
+export type PreviewMintSUsdsRequest = {
+  /**
+   * The chain on which the preview should happen. Must be one of the
+   * supported chains ({@link SUPPORTED_CHAIN_IDS}).
+   */
+  readonly chainId: number;
+
+  /**
+   * Amount of USDC to spend, in USDC's native 6 decimals.
+   *
+   * Must be strictly greater than zero.
+   */
+  readonly amount: bigint;
+};
+
 export type MintSUsdsError = ValidationError | UnsupportedChainError | UnexpectedError;
+
+/**
+ * Preview how much sUSDS an exact-in {@link mintSUsds} flow would
+ * return for the given USDC amount.
+ */
+export function previewMintSUsds(
+  client: OseroClient,
+  request: PreviewMintSUsdsRequest,
+): ResultAsync<bigint, MintSUsdsError> {
+  const chain = getChain(request.chainId);
+  if (!chain) {
+    return errAsync(new UnsupportedChainError(request.chainId));
+  }
+  if (request.amount <= 0n) {
+    return errAsync(ValidationError.forField('amount', 'amount must be greater than 0'));
+  }
+
+  if (chain.isMainnet) {
+    return quoteMainnetMintSUsds(client, chain, request.amount);
+  }
+
+  return quoteL2MintSUsds(client, chain, request.amount);
+}
 
 /**
  * Build an {@link ExecutionPlan} that mints sUSDS (Savings USDS)
@@ -156,68 +197,59 @@ function buildMainnetPlan(
     );
   }
 
-  const publicClient = client.getPublicClient(chain.chainId);
+  return quoteMainnetUsdsBridgeAmount(client, chain, request.amount, litePsmAddress).map(
+    (usdsOut): MultiStepExecution => {
+      // Phase 1 — USDC → USDS via Spark UsdsPsmWrapper.sellGem.
+      // USDS goes to `sender` (the intermediate holder) because `sender`
+      // is the one who will approve it into sUSDS in phase 2.
+      const sellGemData = encodeFunctionData({
+        abi: usdsPsmWrapperAbi,
+        functionName: 'sellGem',
+        args: [request.sender, request.amount],
+      });
+      const sellGemTx = makeTransactionRequest({
+        chainId: chain.chainId,
+        from: request.sender,
+        to: wrapperAddress,
+        data: sellGemData,
+        operation: 'MINT_USDS',
+      });
+      const phase1 = makeSingleApprovalPlan({
+        chainId: chain.chainId,
+        from: request.sender,
+        token: usdc.address,
+        spender: wrapperAddress,
+        amount: request.amount,
+        mainTransaction: sellGemTx,
+      });
 
-  return ResultAsync.fromPromise(
-    publicClient.readContract({
-      address: litePsmAddress,
-      abi: litePsmAbi,
-      functionName: 'tin',
-    }),
-    (err) => UnexpectedError.from(err),
-  ).map((tin): MultiStepExecution => {
-    const usdsOut = usdsFromUsdcViaSellGem(request.amount, tin);
+      // Phase 2 — USDS → sUSDS via the ERC-4626 vault. The vault is
+      // at the sUSDS address and must be approved as the spender of
+      // the sender's USDS.
+      const depositData = encodeFunctionData({
+        abi: erc4626Abi,
+        functionName: 'deposit',
+        args: [usdsOut, receiver],
+      });
+      const depositTx = makeTransactionRequest({
+        chainId: chain.chainId,
+        from: request.sender,
+        to: susds.address,
+        data: depositData,
+        operation: 'DEPOSIT_USDS_FOR_SUSDS',
+      });
+      const phase2 = makeSingleApprovalPlan({
+        chainId: chain.chainId,
+        from: request.sender,
+        token: usds.address,
+        spender: susds.address,
+        amount: usdsOut,
+        mainTransaction: depositTx,
+      });
 
-    // Phase 1 — USDC → USDS via Spark UsdsPsmWrapper.sellGem.
-    // USDS goes to `sender` (the intermediate holder) because `sender`
-    // is the one who will approve it into sUSDS in phase 2.
-    const sellGemData = encodeFunctionData({
-      abi: usdsPsmWrapperAbi,
-      functionName: 'sellGem',
-      args: [request.sender, request.amount],
-    });
-    const sellGemTx = makeTransactionRequest({
-      chainId: chain.chainId,
-      from: request.sender,
-      to: wrapperAddress,
-      data: sellGemData,
-      operation: 'MINT_USDS',
-    });
-    const phase1 = makeSingleApprovalPlan({
-      chainId: chain.chainId,
-      from: request.sender,
-      token: usdc.address,
-      spender: wrapperAddress,
-      amount: request.amount,
-      mainTransaction: sellGemTx,
-    });
-
-    // Phase 2 — USDS → sUSDS via the ERC-4626 vault. The vault is
-    // at the sUSDS address and must be approved as the spender of
-    // the sender's USDS.
-    const depositData = encodeFunctionData({
-      abi: erc4626Abi,
-      functionName: 'deposit',
-      args: [usdsOut, receiver],
-    });
-    const depositTx = makeTransactionRequest({
-      chainId: chain.chainId,
-      from: request.sender,
-      to: susds.address,
-      data: depositData,
-      operation: 'DEPOSIT_USDS_FOR_SUSDS',
-    });
-    const phase2 = makeSingleApprovalPlan({
-      chainId: chain.chainId,
-      from: request.sender,
-      token: usds.address,
-      spender: susds.address,
-      amount: usdsOut,
-      mainTransaction: depositTx,
-    });
-
-    return makeMultiStepPlan([phase1, phase2]);
-  });
+      return makeMultiStepPlan([phase1, phase2]);
+    },
+  );
 }
 
 function buildL2Plan(
@@ -232,17 +264,7 @@ function buildL2Plan(
   const slippageBps = request.slippageBps ?? client.config.defaultSlippageBps;
   const referralCode = request.referralCode ?? 0n;
 
-  const publicClient = client.getPublicClient(chain.chainId);
-
-  return ResultAsync.fromPromise(
-    publicClient.readContract({
-      address: psmAddress,
-      abi: psm3Abi,
-      functionName: 'previewSwapExactIn',
-      args: [usdc.address, susds.address, request.amount],
-    }),
-    (err) => UnexpectedError.from(err),
-  ).andThen((quote) => {
+  return quoteL2MintSUsds(client, chain, request.amount).andThen((quote) => {
     const minAmountOut = applySlippage(quote, slippageBps);
 
     const swapData = encodeFunctionData({
@@ -270,4 +292,82 @@ function buildL2Plan(
       }),
     );
   });
+}
+
+function quoteMainnetMintSUsds(
+  client: OseroClient,
+  chain: ChainMetadata,
+  amount: bigint,
+): ResultAsync<bigint, UnexpectedError> {
+  const susds = getToken(chain.chainId, 'sUSDS');
+  const litePsmAddress = PSM_ADDRESSES[chain.chainId].litePsm;
+
+  if (!litePsmAddress) {
+    return errAsync(
+      UnexpectedError.from(
+        new Error('Mainnet PSM_ADDRESSES entry is missing `litePsm`. This is a bug in the SDK.'),
+      ),
+    );
+  }
+
+  const publicClient = client.getPublicClient(chain.chainId);
+
+  return quoteMainnetUsdsBridgeAmount(client, chain, amount, litePsmAddress).andThen((usdsOut) =>
+    ResultAsync.fromPromise(
+      publicClient.readContract({
+        address: susds.address,
+        abi: erc4626Abi,
+        functionName: 'previewDeposit',
+        args: [usdsOut],
+      }),
+      (err) => UnexpectedError.from(err),
+    ),
+  );
+}
+
+function quoteMainnetUsdsBridgeAmount(
+  client: OseroClient,
+  chain: ChainMetadata,
+  amount: bigint,
+  litePsmAddress = PSM_ADDRESSES[chain.chainId].litePsm,
+): ResultAsync<bigint, UnexpectedError> {
+  if (!litePsmAddress) {
+    return errAsync(
+      UnexpectedError.from(
+        new Error('Mainnet PSM_ADDRESSES entry is missing `litePsm`. This is a bug in the SDK.'),
+      ),
+    );
+  }
+
+  const publicClient = client.getPublicClient(chain.chainId);
+
+  return ResultAsync.fromPromise(
+    publicClient.readContract({
+      address: litePsmAddress,
+      abi: litePsmAbi,
+      functionName: 'tin',
+    }),
+    (err) => UnexpectedError.from(err),
+  ).map((tin) => usdsFromUsdcViaSellGem(amount, tin));
+}
+
+function quoteL2MintSUsds(
+  client: OseroClient,
+  chain: ChainMetadata,
+  amount: bigint,
+): ResultAsync<bigint, UnexpectedError> {
+  const usdc = getToken(chain.chainId, 'USDC');
+  const susds = getToken(chain.chainId, 'sUSDS');
+  const psmAddress = PSM_ADDRESSES[chain.chainId].psm;
+  const publicClient = client.getPublicClient(chain.chainId);
+
+  return ResultAsync.fromPromise(
+    publicClient.readContract({
+      address: psmAddress,
+      abi: psm3Abi,
+      functionName: 'previewSwapExactIn',
+      args: [usdc.address, susds.address, amount],
+    }),
+    (err) => UnexpectedError.from(err),
+  );
 }

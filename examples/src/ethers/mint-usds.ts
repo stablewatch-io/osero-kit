@@ -16,13 +16,13 @@ import { OseroClient, getChain } from '@osero/client';
  *
  *   pnpm --filter @osero/examples ethers:mint-usds
  */
-import { mintUsds } from '@osero/client/actions';
+import { mintUsds, previewMintUsds } from '@osero/client/actions';
 import { sendWith } from '@osero/client/ethers';
 import { JsonRpcProvider, Wallet } from 'ethers';
 import { http, parseUnits } from 'viem';
 
 import { loadPrivateKey, optionalRpcUrl } from '../shared/env.js';
-import { banner, describeResult } from '../shared/format.js';
+import { banner, describeResult, formatToken } from '../shared/format.js';
 
 const CHAIN_ID = 8453 as const;
 const AMOUNT_USDC = parseUnits('10', 6);
@@ -54,6 +54,17 @@ async function main() {
   banner(`mintUsds — ${chainMeta.name} (ethers)`);
   console.log(`  sender: ${senderAddress}`);
   console.log(`  spend:  ${AMOUNT_USDC} USDC (raw 6-dec)`);
+
+  const previewResult = await previewMintUsds(client, {
+    chainId: CHAIN_ID,
+    amount: AMOUNT_USDC,
+  });
+  if (previewResult.isErr()) {
+    console.error('previewMintUsds failed:', previewResult.error);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`  quote:  ${formatToken(previewResult.value, 18, 'USDS')}`);
 
   const result = await mintUsds(client, {
     chainId: CHAIN_ID,
