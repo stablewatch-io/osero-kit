@@ -1,5 +1,11 @@
 # @osero/client
 
+## 0.3.0
+
+### Minor Changes
+
+- 7d3960c: Add mainnet `mintSUsds` referral support via the sUSDS deposit referral overload while keeping the SDK request shape consistent across mainnet and L2 chains. Update examples to show referral code usage for sUSDS mint flows.
+
 ## 0.2.0
 
 ### Minor Changes
