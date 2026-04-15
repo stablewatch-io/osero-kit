@@ -132,6 +132,48 @@ type Request = {
 };
 ```
 
+## Balance helpers
+
+`@osero/client` also exposes read-only helpers for canonical token
+balances so callers can stick with the SDK's chain registry and public
+client wiring instead of dropping down to raw ERC-20 reads.
+
+```ts
+import {
+  getSUsdsBalance,
+  getTokenBalance,
+  getTokenBalances,
+  getUsdcBalance,
+  getUsdsBalance,
+} from '@osero/client';
+```
+
+Choose the helper that matches the job:
+
+- `getTokenBalance(client, { chainId, account, token })` reads one of
+  the three canonical symbols: `USDC`, `USDS`, or `sUSDS`
+- `getTokenBalances(client, { chainId, account })` returns all three
+  balances in one keyed result object
+- `getUsdcBalance`, `getUsdsBalance`, and `getSUsdsBalance` keep the
+  common single-token cases terse
+
+```ts
+const result = await getTokenBalances(client, {
+  chainId: 8453,
+  account: wallet.account.address,
+});
+
+if (result.isOk()) {
+  console.log(result.value.USDC);
+  console.log(result.value.USDS);
+  console.log(result.value.sUSDS);
+}
+```
+
+All balance helpers return raw `bigint` values and surface
+`UnsupportedChainError` or `UnexpectedError` through the same
+`ResultAsync` model used by the action builders.
+
 ## Error handling
 
 `@osero/client` uses [`neverthrow`](https://github.com/supermacro/neverthrow)

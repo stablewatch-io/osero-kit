@@ -68,6 +68,11 @@ The SDK splits "what to do" from "how to sign":
    expose a `sendWith(wallet)` that walks the plan, broadcasts every
    tx in order, and returns a `TransactionResult` or a typed error.
 
+The roundtrip examples also show the read side of the SDK: they use
+`getTokenBalances` and `getSUsdsBalance` from `@osero/client` to track
+the balance delta across the mint and redeem legs without hand-writing
+ERC-20 `balanceOf` calls.
+
 That dichotomy is the whole SDK — everything else is routing per
 chain. On L2s the plans are `Erc20ApprovalRequired` (PSM3 swap). On
 Ethereum mainnet, minting or redeeming sUSDS becomes a

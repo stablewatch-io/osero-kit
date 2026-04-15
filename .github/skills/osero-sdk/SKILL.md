@@ -16,6 +16,7 @@ Use these subpath exports:
 - `@osero/client`
   - `OseroClient`
   - chain/token metadata helpers like `SUPPORTED_CHAIN_IDS`, `getChain`, `getToken`, `PSM_ADDRESSES`
+  - balance helpers like `getTokenBalance`, `getTokenBalances`, `getUsdcBalance`, `getUsdsBalance`, `getSUsdsBalance`
   - plan helpers like `flattenExecutionPlan`, `isErc20ApprovalRequired`, `isMultiStepExecution`
   - error classes like `ValidationError`, `UnsupportedChainError`, `TransactionError`
 - `@osero/client/actions`
@@ -100,6 +101,51 @@ Important request details:
 - `receiver` defaults to `sender`
 - `slippageBps` defaults to `client.config.defaultSlippageBps`
 - `referralCode` is relevant on L2 PSM3 routes
+
+## Balance Reads
+
+Import balance helpers from the root package when the caller only needs
+read access to canonical token balances.
+
+```ts
+import {
+  getSUsdsBalance,
+  getTokenBalance,
+  getTokenBalances,
+  getUsdcBalance,
+  getUsdsBalance,
+} from '@osero/client';
+```
+
+Use these helpers:
+
+- `getTokenBalance(client, { chainId, account, token })` for one of
+  the canonical Osero tokens: `USDC`, `USDS`, or `sUSDS`
+- `getTokenBalances(client, { chainId, account })` to read all three
+  balances together
+- `getUsdcBalance`, `getUsdsBalance`, and `getSUsdsBalance` as thin
+  convenience wrappers for the common single-token cases
+
+All balance helpers return `ResultAsync<bigint, UnsupportedChainError |
+UnexpectedError>` for single-token reads, or a keyed object of raw
+`bigint` balances for `getTokenBalances`:
+
+```ts
+const balances = await getTokenBalances(client, {
+  chainId: 8453,
+  account: wallet.account.address,
+});
+
+if (balances.isOk()) {
+  console.log(balances.value.USDC);
+  console.log(balances.value.USDS);
+  console.log(balances.value.sUSDS);
+}
+```
+
+Balance helpers reuse the SDK's token registry and `OseroClient`
+transport wiring, so prefer them over hand-written ERC-20 `balanceOf`
+calls in application code and examples.
 
 ## Viem Usage
 

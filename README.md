@@ -168,6 +168,47 @@ type ActionRequest = {
 };
 ```
 
+## Balance Helpers
+
+Import balance helpers from the root package when you want raw token
+balances without wiring ERC-20 calls yourself:
+
+```ts
+import {
+  getSUsdsBalance,
+  getTokenBalance,
+  getTokenBalances,
+  getUsdcBalance,
+  getUsdsBalance,
+} from '@osero/client';
+```
+
+Use `getTokenBalance(client, { chainId, account, token })` for a
+single canonical token, `getTokenBalances(client, { chainId, account })`
+to read `USDC`, `USDS`, and `sUSDS` together, or the convenience
+wrappers for common single-token reads.
+
+```ts
+const balances = await getTokenBalances(client, {
+  chainId: 8453,
+  account: account.address,
+});
+
+if (balances.isOk()) {
+  console.log(balances.value.USDC);
+  console.log(balances.value.sUSDS);
+}
+
+const susds = await getSUsdsBalance(client, {
+  chainId: 8453,
+  account: account.address,
+});
+```
+
+These helpers return `ResultAsync` values and reuse the SDK's
+supported-chain checks, token registry, and configured public
+transports.
+
 ## Configuration
 
 Create an `OseroClient` once and pass it to action functions:
@@ -217,6 +258,10 @@ console.log(getToken(8453, 'USDC').address);
 ## Examples
 
 Runnable examples live in `examples/src`.
+
+The Base roundtrip examples now use `getTokenBalances` and
+`getSUsdsBalance` to snapshot balances before and after the mint/redeem
+flow instead of constructing ERC-20 reads manually.
 
 ## Releases
 
