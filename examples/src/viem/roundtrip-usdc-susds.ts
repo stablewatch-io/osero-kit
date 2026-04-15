@@ -1,4 +1,4 @@
-import { OseroClient, erc20Abi, getChain, getToken } from '@osero/client';
+import { OseroClient, getChain, getSUsdsBalance, getTokenBalances } from '@osero/client';
 /**
  * Full round-trip on Base using a viem wallet:
  *
@@ -15,7 +15,7 @@ import { OseroClient, erc20Abi, getChain, getToken } from '@osero/client';
  */
 import { mintSUsds, redeemSUsds } from '@osero/client/actions';
 import { sendWith } from '@osero/client/viem';
-import { createPublicClient, createWalletClient, http, parseUnits } from 'viem';
+import { createWalletClient, http, parseUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base } from 'viem/chains';
 
@@ -32,28 +32,14 @@ async function main() {
 
   const transport = http(optionalRpcUrl(CHAIN_ID));
   const wallet = createWalletClient({ account, chain: base, transport });
-  const publicClient = createPublicClient({ chain: base, transport });
   const client = OseroClient.create({ transports: { [CHAIN_ID]: transport } });
 
-  const usdc = getToken(CHAIN_ID, 'USDC');
-  const susds = getToken(CHAIN_ID, 'sUSDS');
-
-  // Snapshot balances at the start so we can print a delta at the
-  // end and see how much PSM3 fees cost.
-  const [usdcBefore, susdsBefore] = await Promise.all([
-    publicClient.readContract({
-      address: usdc.address,
-      abi: erc20Abi,
-      functionName: 'balanceOf',
-      args: [account.address],
-    }),
-    publicClient.readContract({
-      address: susds.address,
-      abi: erc20Abi,
-      functionName: 'balanceOf',
-      args: [account.address],
-    }),
-  ]);
+  const balancesBeforeResult = await getTokenBalances(client, {
+    chainId: CHAIN_ID,
+    account: account.address,
+  });
+  if (balancesBeforeResult.isErr()) throw balancesBeforeResult.error;
+  const { USDC: usdcBefore, sUSDS: susdsBefore } = balancesBeforeResult.value;
 
   banner(`Round-trip — ${chainMeta.name}`);
   console.log(`  sender: ${account.address}`);
@@ -86,12 +72,12 @@ async function main() {
 
   // How many sUSDS shares did we actually receive? Read the delta
   // from the balance — this is more robust than decoding logs.
-  const susdsMid = await publicClient.readContract({
-    address: susds.address,
-    abi: erc20Abi,
-    functionName: 'balanceOf',
-    args: [account.address],
+  const susdsMidResult = await getSUsdsBalance(client, {
+    chainId: CHAIN_ID,
+    account: account.address,
   });
+  if (susdsMidResult.isErr()) throw susdsMidResult.error;
+  const susdsMid = susdsMidResult.value;
   const sharesReceived = susdsMid - susdsBefore;
   console.log(`  received: ${formatToken(sharesReceived, 18, 'sUSDS')}`);
 
@@ -115,20 +101,12 @@ async function main() {
   // -------------------------------------------------------------
   // Final delta
   // -------------------------------------------------------------
-  const [usdcAfter, susdsAfter] = await Promise.all([
-    publicClient.readContract({
-      address: usdc.address,
-      abi: erc20Abi,
-      functionName: 'balanceOf',
-      args: [account.address],
-    }),
-    publicClient.readContract({
-      address: susds.address,
-      abi: erc20Abi,
-      functionName: 'balanceOf',
-      args: [account.address],
-    }),
-  ]);
+  const balancesAfterResult = await getTokenBalances(client, {
+    chainId: CHAIN_ID,
+    account: account.address,
+  });
+  if (balancesAfterResult.isErr()) throw balancesAfterResult.error;
+  const { USDC: usdcAfter, sUSDS: susdsAfter } = balancesAfterResult.value;
 
   banner('Round-trip complete');
   console.log(

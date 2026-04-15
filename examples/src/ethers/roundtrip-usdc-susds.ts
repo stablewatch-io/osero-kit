@@ -1,4 +1,4 @@
-import { OseroClient, erc20Abi, getChain, getToken } from '@osero/client';
+import { OseroClient, getChain, getSUsdsBalance, getTokenBalances } from '@osero/client';
 /**
  * Full round-trip on Base using an ethers v6 signer:
  *
@@ -15,7 +15,7 @@ import { OseroClient, erc20Abi, getChain, getToken } from '@osero/client';
  */
 import { mintSUsds, redeemSUsds } from '@osero/client/actions';
 import { sendWith } from '@osero/client/ethers';
-import { Contract, JsonRpcProvider, Wallet, type InterfaceAbi } from 'ethers';
+import { JsonRpcProvider, Wallet } from 'ethers';
 import { http, parseUnits } from 'viem';
 
 import { loadPrivateKey, optionalRpcUrl } from '../shared/env.js';
@@ -23,13 +23,6 @@ import { banner, describeResult, formatToken } from '../shared/format.js';
 
 const CHAIN_ID = 8453 as const;
 const MINT_AMOUNT_USDC = parseUnits('10', 6);
-
-// Read-only view of an ERC-20 for balance queries. The Osero `erc20Abi`
-// export is a viem ABI tuple — ethers accepts it directly as an
-// `InterfaceAbi`, no conversion required.
-function readonlyErc20(address: string, provider: JsonRpcProvider): Contract {
-  return new Contract(address, erc20Abi as InterfaceAbi, provider);
-}
 
 async function main() {
   const chainMeta = getChain(CHAIN_ID);
@@ -48,15 +41,12 @@ async function main() {
     },
   });
 
-  const usdc = getToken(CHAIN_ID, 'USDC');
-  const susds = getToken(CHAIN_ID, 'sUSDS');
-  const usdcContract = readonlyErc20(usdc.address, provider);
-  const susdsContract = readonlyErc20(susds.address, provider);
-
-  const [usdcBefore, susdsBefore] = await Promise.all([
-    usdcContract.balanceOf(senderAddress) as Promise<bigint>,
-    susdsContract.balanceOf(senderAddress) as Promise<bigint>,
-  ]);
+  const balancesBeforeResult = await getTokenBalances(client, {
+    chainId: CHAIN_ID,
+    account: senderAddress,
+  });
+  if (balancesBeforeResult.isErr()) throw balancesBeforeResult.error;
+  const { USDC: usdcBefore, sUSDS: susdsBefore } = balancesBeforeResult.value;
 
   banner(`Round-trip — ${chainMeta.name} (ethers)`);
   console.log(`  sender: ${senderAddress}`);
@@ -87,7 +77,12 @@ async function main() {
   }
   console.log(describeResult(mintResult.value, chainMeta.explorerUrl));
 
-  const susdsMid = (await susdsContract.balanceOf(senderAddress)) as bigint;
+  const susdsMidResult = await getSUsdsBalance(client, {
+    chainId: CHAIN_ID,
+    account: senderAddress,
+  });
+  if (susdsMidResult.isErr()) throw susdsMidResult.error;
+  const susdsMid = susdsMidResult.value;
   const sharesReceived = susdsMid - susdsBefore;
   console.log(`  received: ${formatToken(sharesReceived, 18, 'sUSDS')}`);
 
@@ -111,10 +106,12 @@ async function main() {
   // -------------------------------------------------------------
   // Final delta
   // -------------------------------------------------------------
-  const [usdcAfter, susdsAfter] = await Promise.all([
-    usdcContract.balanceOf(senderAddress) as Promise<bigint>,
-    susdsContract.balanceOf(senderAddress) as Promise<bigint>,
-  ]);
+  const balancesAfterResult = await getTokenBalances(client, {
+    chainId: CHAIN_ID,
+    account: senderAddress,
+  });
+  if (balancesAfterResult.isErr()) throw balancesAfterResult.error;
+  const { USDC: usdcAfter, sUSDS: susdsAfter } = balancesAfterResult.value;
 
   banner('Round-trip complete');
   console.log(

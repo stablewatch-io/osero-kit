@@ -12,6 +12,19 @@ export {
 // Addresses -------------------------------------------------------------
 export { PSM_ADDRESSES, type PsmAddresses } from './lib/addresses.js';
 
+// Balances --------------------------------------------------------------
+export {
+  getSUsdsBalance,
+  getTokenBalance,
+  getTokenBalances,
+  getUsdcBalance,
+  getUsdsBalance,
+  type GetBalancesRequest,
+  type GetTokenBalanceError,
+  type GetTokenBalanceRequest,
+  type TokenBalances,
+} from './lib/balances.js';
+
 // Chain registry --------------------------------------------------------
 export {
   CHAINS,
